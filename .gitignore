@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Generated lesson data
+data/*.csv
+!data/README.md
+!data/.gitkeep
+
+# Local environment files
+.env
+.env.*
