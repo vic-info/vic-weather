@@ -3,10 +3,12 @@
 
 # COMMAND ----------
 
+# 步骤 1：导入 Schema 定义与校验函数
 # MAGIC %run ./00_table_schemas
 
 # COMMAND ----------
 
+# 步骤 2：引入 PySpark 清洗相关的时间处理与数学函数，并配置表路径
 from pyspark.sql.functions import col, dayofweek, month, round, to_date, year
 
 catalog_name = "workspace"
@@ -20,6 +22,7 @@ print(f"Writing Silver table to: {silver_table}")
 
 # COMMAND ----------
 
+# 步骤 3：从 Delta 湖中读取 Bronze 层的原始数据并展示
 bronze_df = spark.read.table(bronze_table)
 
 display(bronze_df.limit(10))
@@ -27,6 +30,10 @@ bronze_df.printSchema()
 
 # COMMAND ----------
 
+# 步骤 4：执行核心清洗与转换逻辑
+# 1. 过滤核心主键的空值
+# 2. 转换日期格式，提取年份、月份、星期几等常用分析维度
+# 3. 规范化列名以契合业务语义，计算派生字段（温差、是否雨天/炎热天/结冰天等布尔标记）
 silver_df = (
     bronze_df
     .filter(col("city").isNotNull())
@@ -76,6 +83,7 @@ silver_df.printSchema()
 
 # COMMAND ----------
 
+# 步骤 5：将清洗并校验通过的结构化数据 Overwrite 写入 Silver Delta 表中
 (
     silver_df.write
     .format("delta")
@@ -88,6 +96,7 @@ print(f"Silver table created: {silver_table}")
 
 # COMMAND ----------
 
+# 步骤 6：通过 SQL 进行城市粒度的数据探索，验证清洗衍生字段的统计分布
 spark.sql(f"""
 SELECT
   city,

@@ -3,10 +3,12 @@
 
 # COMMAND ----------
 
+# 步骤 1：导入 Schema 元数据和校验函数
 # MAGIC %run ./00_table_schemas
 
 # COMMAND ----------
 
+# 步骤 2：配置待检测的所有表路径，并初始化错误收集列表
 catalog_name = "workspace"
 schema_name = "default"
 
@@ -17,6 +19,7 @@ gold_risk_table = f"{catalog_name}.{schema_name}.gold_weather_risk_days"
 
 failed_checks = []
 
+# 定义异常捕获版的 Schema 校验器，避免单项质检失败立刻阻断全部流程
 def check_schema(table_name, expected_schema):
     try:
         validate_dataframe_schema(spark.table(table_name), expected_schema, table_name)
@@ -27,8 +30,9 @@ def check_schema(table_name, expected_schema):
         print(f"  PASS — {table_name} has the expected schema")
 
 # COMMAND ----------
-# DQ 1: Silver table is not empty
 
+# 步骤 3：数据质量检查（DQ 1 - DQ 2）- Silver 清洗层校验
+# 1. 确认 Silver 表不为空
 silver_count = spark.table(silver_table).count()
 if silver_count == 0:
     failed_checks.append(f"FAIL: {silver_table} is empty")
@@ -36,9 +40,7 @@ if silver_count == 0:
 else:
     print(f"  PASS — {silver_table} has {silver_count} rows")
 
-# COMMAND ----------
-# DQ 2: Silver table has no null weather_date
-
+# 2. 确认 Silver 表中没有空的日期（weather_date）
 silver_null_dates = (
     spark.table(silver_table)
     .filter("weather_date IS NULL")
@@ -51,13 +53,12 @@ else:
     print(f"  PASS — {silver_table} has no null weather_date")
 
 # COMMAND ----------
-# DQ 3: Gold daily table has expected schema
 
+# 步骤 4：数据质量检查（DQ 3 - DQ 5）- Gold Daily 表校验
+# 1. 检验每日指标表 Schema 结构契约是否正确
 check_schema(gold_daily_table, GOLD_DAILY_WEATHER_SCHEMA)
 
-# COMMAND ----------
-# DQ 4: Gold daily table is not empty
-
+# 2. 确保每日指标表不为空
 daily_count = spark.table(gold_daily_table).count()
 if daily_count == 0:
     failed_checks.append(f"FAIL: {gold_daily_table} is empty")
@@ -65,9 +66,7 @@ if daily_count == 0:
 else:
     print(f"  PASS — {gold_daily_table} has {daily_count} rows")
 
-# COMMAND ----------
-# DQ 5: Gold daily table has no duplicate city + weather_date
-
+# 3. 校验主键唯一性：确保同一个城市同一天不存在重复数据行
 daily_dupes = (
     spark.table(gold_daily_table)
     .groupBy("city", "weather_date")
@@ -82,13 +81,12 @@ else:
     print(f"  PASS — {gold_daily_table} has no duplicate city+weather_date")
 
 # COMMAND ----------
-# DQ 6: Gold monthly table has expected schema
 
+# 步骤 5：数据质量检查（DQ 6 - DQ 7）- Gold Monthly 表校验
+# 1. 校验月度统计表的 Schema
 check_schema(gold_monthly_table, GOLD_MONTHLY_WEATHER_SCHEMA)
 
-# COMMAND ----------
-# DQ 7: Gold monthly table is not empty
-
+# 2. 确保月度统计表不为空
 monthly_count = spark.table(gold_monthly_table).count()
 if monthly_count == 0:
     failed_checks.append(f"FAIL: {gold_monthly_table} is empty")
@@ -97,13 +95,12 @@ else:
     print(f"  PASS — {gold_monthly_table} has {monthly_count} rows")
 
 # COMMAND ----------
-# DQ 8: Gold risk table has expected schema
 
+# 步骤 6：数据质量检查（DQ 8 - DQ 10）- Gold Risk 表校验
+# 1. 校验风险天数表的 Schema
 check_schema(gold_risk_table, GOLD_RISK_WEATHER_SCHEMA)
 
-# COMMAND ----------
-# DQ 9: Gold risk table is queryable (can be empty)
-
+# 2. 确保风险天数表可以正常执行查询（在没有灾害天气时，允许表为空，但不能无法访问）
 try:
     risk_count = spark.table(gold_risk_table).count()
     print(f"  PASS — {gold_risk_table} is queryable with {risk_count} rows")
@@ -111,9 +108,7 @@ except Exception as e:
     failed_checks.append(f"FAIL: {gold_risk_table} query failed: {e}")
     print(f"  FAIL — {gold_risk_table} query failed: {e}")
 
-# COMMAND ----------
-# DQ 10: Gold risk table has no duplicate city + weather_date + risk_type
-
+# 3. 校验联合主键唯一性：确保同一城市同一天针对同一类型风险，没有重复写入数据
 risk_dupes = (
     spark.table(gold_risk_table)
     .groupBy("city", "weather_date", "risk_type")
@@ -128,13 +123,13 @@ else:
     print(f"  PASS — {gold_risk_table} has no duplicate city+date+risk_type")
 
 # COMMAND ----------
-# Summary
 
+# 步骤 7：汇总检查结果，并通过 Databricks taskValues 向下游传递运行决策 (dq_passed)
+# 这一机制能在工作流（Workflow Job）中将本次质检结果通知给后继任务。如果失败，则抛出异常以熔断流水线。
 total_checks = 10
 passed_checks = total_checks - len(failed_checks)
 dq_passed = len(failed_checks) == 0
 
-# Lakeflow Jobs task values are available to downstream If/else tasks.
 dbutils.jobs.taskValues.set(key="dq_passed", value=dq_passed)
 
 print(f"\n{'='*50}")

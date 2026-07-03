@@ -1,6 +1,8 @@
 # Databricks notebook source
 # Paste this entire file into one Databricks Python cell and run it.
 
+# 步骤 1：引入依赖并定义 Serving 层同步的元数据配置 (Lakebase/Postgres)
+# Lakebase 要求在目标端定义主键以支持 upsert (合并覆盖) 的快照增量同步
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +25,7 @@ SYNC_TABLES = [
         "workspace.default.weather_daily_metrics",
         ["city", "weather_date"],
     ),
+    # 如有需要，可以取消注释以同步月度摘要表和风险事件表
     # (
     #     "workspace.default.gold_city_monthly_weather_summary",
     #     "workspace.default.weather_monthly_summary",
@@ -35,11 +38,13 @@ SYNC_TABLES = [
     # )
 ]
 
+# 步骤 2：初始化 Databricks SDK 的 Workspace 客户端
 client = WorkspaceClient()
 api = client.api_client
 headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
 
+# 步骤 3：定义向 Lakebase API 注册同步表任务的函数（内含异步长任务 Polling 进度查询）
 def create_synced_table(source_table, target_table, primary_keys):
     operation = api.do(
         "POST",
@@ -58,6 +63,7 @@ def create_synced_table(source_table, target_table, primary_keys):
         },
     )
 
+    # 循环检查异步操作进度
     while not operation.get("done", False):
         time.sleep(5)
         operation = api.do(
@@ -72,6 +78,7 @@ def create_synced_table(source_table, target_table, primary_keys):
     return operation["response"]["name"]
 
 
+# 步骤 4：定义阻塞等待目标表就绪 (detailed_state 达到 ONLINE) 的轮询函数
 def wait_until_online(target_table, timeout_seconds=900):
     deadline = time.time() + timeout_seconds
     previous_state = None
@@ -102,6 +109,7 @@ def wait_until_online(target_table, timeout_seconds=900):
     raise TimeoutError(f"Timed out waiting for Lakebase table: {target_table}")
 
 
+# 步骤 5：遍历同步任务，检查源表就绪状态，触发同步并等待上线
 for source_table, target_table, primary_keys in SYNC_TABLES:
     if not spark.catalog.tableExists(source_table):
         raise RuntimeError(f"Source table does not exist: {source_table}")

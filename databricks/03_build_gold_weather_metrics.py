@@ -3,10 +3,12 @@
 
 # COMMAND ----------
 
+# 步骤 1：导入 Schema 元数据和校验函数
 # MAGIC %run ./00_table_schemas
 
 # COMMAND ----------
 
+# 步骤 2：引入 PySpark 常用算子并配置输入/输出路径
 from pyspark.sql.functions import avg, col, lit, max, min, round, sum, when
 
 catalog_name = "workspace"
@@ -24,14 +26,16 @@ print(f"Writing Gold risk to: {gold_risk_table}")
 
 # COMMAND ----------
 
+# 步骤 3：加载干净的 Silver 数据层作为聚合计算的唯一可信源
 silver_df = spark.read.table(silver_table)
 
 display(silver_df.limit(5))
 print(f"Silver row count: {silver_df.count()}")
 
 # COMMAND ----------
-# Gold Daily Metrics — grain: city + weather_date
 
+# 步骤 4：构建 Gold Daily Metrics 表
+# 粒度：每个城市每天一行。计算自定义的天气严重性得分（Severity Score：下雨、炎热、冰冻、强风各占 1 分，总分 0-4）
 daily_df = silver_df.select(
     col("city"),
     col("weather_date"),
@@ -60,6 +64,7 @@ daily_df.printSchema()
 
 # COMMAND ----------
 
+# 步骤 5：持久化写入 Gold Daily 表，并用 SQL 查询进行大盘统计与排序
 (
     daily_df.write
     .format("delta")
@@ -83,8 +88,9 @@ ORDER BY city
 """).show(truncate=False)
 
 # COMMAND ----------
-# Gold Monthly Summary — grain: city + year + month
 
+# 步骤 6：构建 Gold Monthly Summary 表
+# 粒度：每个城市每个月一行。使用 groupBy + agg 实现经典多列指标统计与累计值计算
 monthly_df = (
     silver_df
     .groupBy(col("city"), col("year"), col("month"))
@@ -108,6 +114,7 @@ monthly_df.printSchema()
 
 # COMMAND ----------
 
+# 步骤 7：持久化写入 Gold Monthly 表，并运行 SQL 统计验证年均数据
 (
     monthly_df.write
     .format("delta")
@@ -130,8 +137,10 @@ ORDER BY city, year
 """).show(truncate=False)
 
 # COMMAND ----------
-# Gold Risk Days — event table, grain: city + weather_date + risk_type
 
+# 步骤 8：构建 Gold Risk Days (气象风险天数事件表)
+# 粒度：每个触发风险事件一行。
+# 分别按照阈值规则筛选“高温”、“低温”、“暴雨”、“大风”四类事件，并使用 unionByName 安全合并（列名自动对齐）
 hot_days_df = (
     silver_df
     .filter(col("max_temp_c") >= 35)
@@ -194,11 +203,13 @@ validate_dataframe_schema(risk_df, GOLD_RISK_WEATHER_SCHEMA, "gold_weather_risk_
 
 # COMMAND ----------
 
+# 步骤 9：统计合并出的风险事件并打印前 10 行样例
 print(f"Risk events found: {risk_df.count()}")
 display(risk_df.limit(10))
 
 # COMMAND ----------
 
+# 步骤 10：持久化写入 Gold Risk 表，并运行 SQL 统计不同风险发生频数和城市分布排名
 (
     risk_df.write
     .format("delta")
