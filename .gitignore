@@ -2,7 +2,10 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+node_modules/
+coverage/
 
 # Local environment files
 .env
 .env.*
+!**/.env.example

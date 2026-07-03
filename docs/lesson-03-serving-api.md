@@ -160,7 +160,11 @@ GET /api/weather/risks?city=San Francisco&riskType=HEAVY_RAIN
 backend-node/
 ├── package.json
 ├── .env.example
+├── test/
 └── src/
+    ├── app.js
+    ├── config.js
+    ├── lakebase-auth.js
     ├── server.js
     ├── db.js
     └── routes/
@@ -170,74 +174,68 @@ backend-node/
 初始化依赖：
 
 ```bash
-mkdir backend-node
 cd backend-node
-npm init -y
-npm install express pg dotenv cors
-npm install --save-dev nodemon
+npm install
 ```
 
 课堂不引入 ORM。直接使用 `pg` 可以让学生看清 endpoint 到 SQL 的完整路径。
 
 ## Step 6：数据库连接
 
-`.env.example`：
+从 Lakebase 的 **Connect to your database** 对话框获取：
+
+- **Copy snippet**：Postgres `DATABASE_URL`，其中没有 password。
+- **Copy OAuth token**：一小时有效的数据库 password，不是 workspace API token。
+
+推荐课堂环境使用 Databricks CLI profile 自动刷新数据库凭证。创建 profile 时包含
+`postgres` scope，然后在 `backend-node/.env` 配置：
 
 ```dotenv
-DATABASE_URL=postgresql://username:password@host:5432/weather_serving
-PGSSL=true
+DATABASE_URL=postgresql://username@host:5432/databricks_postgres?sslmode=require
+DATABRICKS_PROFILE=weather-course
+LAKEBASE_ENDPOINT=projects/vic-weather-db/branches/production/endpoints/primary
 PORT=3000
 ```
 
-`src/db.js`：
+如果不用 CLI，则删除 `DATABRICKS_PROFILE` 和 `LAKEBASE_ENDPOINT`，改为：
+
+```dotenv
+PGPASSWORD=粘贴 Copy OAuth token 的结果
+```
+
+该 token 一小时后失效，需要重新复制。真实 URL 和 token 只放在本地 `.env`，不提交到 Git。
+
+连接池必须把 URL 拆成独立字段。Lakebase snippet 没有 password；若同时使用
+`connectionString` 和单独的 password，部分 `pg` 版本会让 URL 中的空 password 覆盖 OAuth token。
+
+`src/db.js` 的核心配置：
 
 ```javascript
 const { Pool } = require("pg");
+const { getDatabaseCredential } = require("./lakebase-auth");
+
+const connectionUrl = new URL(config.databaseUrl);
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSL === "true"
-    ? { rejectUnauthorized: false }
-    : false,
+  host: connectionUrl.hostname,
+  port: Number(connectionUrl.port || 5432),
+  user: decodeURIComponent(connectionUrl.username),
+  database: decodeURIComponent(connectionUrl.pathname.slice(1)),
+  password: () => getDatabaseCredential(config),
+  ssl: { rejectUnauthorized: false },
 });
-
-module.exports = pool;
 ```
-
-真实密码只放在本地 `.env` 或 secret manager 中，不提交到 Git。
 
 ## Step 7：最小 Express Server
 
-`src/server.js`：
+项目已将 app 创建和进程启动分开：
 
 ```javascript
-require("dotenv").config();
-
-const express = require("express");
-const cors = require("cors");
-const weatherRouter = require("./routes/weather");
-
-const app = express();
-const port = Number(process.env.PORT || 3000);
-
-app.use(cors());
-app.use(express.json());
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
-app.use("/api/weather", weatherRouter);
-
-app.use((error, req, res, next) => {
-  console.error(error);
-  res.status(500).json({ error: "Internal server error" });
-});
-
-app.listen(port, () => {
-  console.log(`Weather API listening on port ${port}`);
-});
+const database = await verifyDatabase();
+const server = createApp().listen(config.port);
 ```
+
+`/health` 会执行 `SELECT 1`，因此返回 200 代表 HTTP server 和数据库都可用。
 
 ## Step 8：参数化查询 Route
 
@@ -245,16 +243,16 @@ app.listen(port, () => {
 
 ```javascript
 const express = require("express");
-const pool = require("../db");
+const { pool } = require("../db");
 
 const router = express.Router();
 
 router.get("/cities", async (req, res, next) => {
   try {
     const result = await pool.query(
-      "SELECT DISTINCT city FROM weather_daily_metrics ORDER BY city"
+      "SELECT DISTINCT city FROM \"default\".weather_daily_metrics ORDER BY city"
     );
-    res.json(result.rows.map((row) => row.city));
+    res.json({ data: result.rows.map((row) => row.city) });
   } catch (error) {
     next(error);
   }
@@ -269,19 +267,23 @@ router.get("/daily", async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT city,
-              weather_date AS "weatherDate",
+              weather_date::date::text AS "weatherDate",
               max_temp_c AS "maxTempC",
               min_temp_c AS "minTempC",
               mean_temp_c AS "meanTempC",
               precipitation_mm AS "precipitationMm",
               max_wind_speed_kmh AS "maxWindSpeedKmh",
               weather_severity_score AS "weatherSeverityScore"
-       FROM weather_daily_metrics
-       WHERE city = $1 AND weather_date BETWEEN $2 AND $3
+       FROM "default".weather_daily_metrics
+       WHERE city = $1
+         AND weather_date BETWEEN $2::date AND $3::date
        ORDER BY weather_date`,
       [city, from, to]
     );
-    res.json(result.rows);
+    res.json({
+      data: result.rows,
+      meta: { city, from, to, count: result.rowCount },
+    });
   } catch (error) {
     next(error);
   }
@@ -292,21 +294,12 @@ module.exports = router;
 
 ## Step 9：运行和测试
 
-在 `package.json` 中添加：
-
-```json
-{
-  "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
-  }
-}
-```
-
 启动：
 
 ```bash
-npm run dev
+cd backend-node
+npm test
+npm start
 ```
 
 测试：
@@ -317,7 +310,9 @@ curl "http://localhost:3000/api/weather/cities"
 curl "http://localhost:3000/api/weather/daily?city=San%20Francisco&from=2024-01-01&to=2024-01-31"
 ```
 
-Swagger 只做简短演示，不在课堂现场编写完整 OpenAPI 文档。
+浏览器打开 `http://localhost:3000/api-docs`，可以查看参数、response schema 并直接执行请求。
+`http://localhost:3000/openapi.json` 返回原始 OpenAPI contract。Swagger 只做简短演示，
+不在课堂现场编写完整 OpenAPI 文档。
 
 ## Demo 顺序
 

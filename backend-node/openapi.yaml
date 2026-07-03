@@ -1,0 +1,184 @@
+openapi: 3.0.3
+info:
+  title: Weather Serving API
+  version: 1.0.0
+  description: REST API backed by the Lakebase daily weather serving table.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Check API and database health
+      responses:
+        "200":
+          description: API and database are available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, database]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  database:
+                    type: string
+                    example: connected
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/weather/cities:
+    get:
+      summary: List available cities
+      responses:
+        "200":
+          description: Sorted city names
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: string
+                    example: [Austin, New York, San Francisco]
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /api/weather/daily:
+    get:
+      summary: Query daily weather metrics
+      parameters:
+        - name: city
+          in: query
+          required: true
+          schema:
+            type: string
+          example: San Francisco
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2024-01-01
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2024-01-31
+      responses:
+        "200":
+          description: Daily weather rows for the requested city and date range
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DailyWeather"
+                  meta:
+                    $ref: "#/components/schemas/QueryMetadata"
+        "400":
+          description: Missing or invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+components:
+  schemas:
+    DailyWeather:
+      type: object
+      required:
+        - city
+        - weatherDate
+        - maxTempC
+        - minTempC
+        - meanTempC
+        - precipitationMm
+        - rainMm
+        - snowfallCm
+        - maxWindSpeedKmh
+        - isRainyDay
+        - isHotDay
+        - isFreezingDay
+        - weatherSeverityScore
+      properties:
+        city:
+          type: string
+          example: San Francisco
+        weatherDate:
+          type: string
+          format: date
+          example: 2024-01-01
+        maxTempC:
+          type: number
+          example: 14.5
+        minTempC:
+          type: number
+          example: 7.4
+        meanTempC:
+          type: number
+          example: 10.5
+        precipitationMm:
+          type: number
+          example: 0
+        rainMm:
+          type: number
+          example: 0
+        snowfallCm:
+          type: number
+          example: 0
+        maxWindSpeedKmh:
+          type: number
+          example: 9.7
+        isRainyDay:
+          type: boolean
+          example: false
+        isHotDay:
+          type: boolean
+          example: false
+        isFreezingDay:
+          type: boolean
+          example: false
+        weatherSeverityScore:
+          type: integer
+          example: 0
+    QueryMetadata:
+      type: object
+      required: [city, from, to, count]
+      properties:
+        city:
+          type: string
+          example: San Francisco
+        from:
+          type: string
+          format: date
+          example: 2024-01-01
+        to:
+          type: string
+          format: date
+          example: 2024-01-31
+        count:
+          type: integer
+          example: 31
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+  responses:
+    InternalServerError:
+      description: Unexpected server or database error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
