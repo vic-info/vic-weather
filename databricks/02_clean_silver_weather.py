@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./00_table_schemas
+
+# COMMAND ----------
+
 from pyspark.sql.functions import col, dayofweek, month, round, to_date, year
 
 catalog_name = "workspace"
@@ -66,6 +70,7 @@ silver_df = (
     )
 )
 
+validate_dataframe_schema(silver_df, SILVER_WEATHER_SCHEMA, "silver_weather_daily_clean")
 display(silver_df.limit(10))
 silver_df.printSchema()
 

@@ -19,10 +19,17 @@ Data Quality
         ↓
 Lakebase/Postgres Serving
         ↓
-Spring Boot REST API
+Node.js REST API
 ```
 
 课程目标不是覆盖所有 Databricks 和后端知识，而是让学生理解一个数据产品从 raw data 到 API serving 的完整路径。
+
+### 文档职责
+
+- 本文档是 3 节课的课程大纲，只管范围、节奏、产出和验收。
+- `lesson-01` 至 `lesson-03` 是课堂操作文档。
+- 根目录的 `End-to-End Weather Lakehouse Serving Project 操作指南.md` 是完整项目参考手册，包含主课不展开的扩展内容。
+- 代码以 repo 中的实际 `.py` 文件为准，不在 course plan 中复制实现。
 
 ## 内容取舍
 
@@ -51,7 +58,7 @@ Spring Boot REST API
 
 这些内容不进入 6 小时主课，可以作为作业、bonus 或第二版项目：
 
-- Node.js backend
+- Spring Boot alternative backend
 - React frontend
 - OAuth auth
 - Continuous sync
@@ -64,7 +71,7 @@ Spring Boot REST API
 | --- | --- | --- |
 | [Lesson 1](lesson-01-raw-bronze-silver.md) | Raw → Bronze → Silver | raw CSV、Bronze table、Silver table |
 | [Lesson 2](lesson-02-gold-data-quality.md) | Silver → Gold → Data Quality | Daily metrics、Monthly summary、Risk days、DQ checks |
-| [Lesson 3](lesson-03-serving-api.md) | Gold → Serving → REST API | Lakebase/Postgres tables、Spring Boot API、Swagger/Postman demo |
+| [Lesson 3](lesson-03-serving-api.md) | Gold → Serving → REST API | Lakebase/Postgres tables、Node.js API、Swagger/Postman demo |
 
 ## Lesson 1：Raw → Bronze → Silver
 
@@ -91,8 +98,9 @@ Spring Boot REST API
 ### 代码范围
 
 ```text
-scripts/fetch_open_meteo_weather.py
+data/fetch_open_meteo_weather.py
 databricks/00_setup.py
+databricks/00_table_schemas.py
 databricks/01_ingest_bronze_weather.py
 databricks/02_clean_silver_weather.py
 ```
@@ -100,9 +108,9 @@ databricks/02_clean_silver_weather.py
 ### 验收标准
 
 - 本地生成 `data/raw_weather_daily.csv`。
-- CSV 有 5 个城市、每个城市 366 行。
-- Databricks 中创建 `bronze_weather_daily_raw`。
-- Databricks 中创建 `silver_weather_daily_clean`。
+- CSV 有 5 个城市、每个城市 366 行，共 1830 行。
+- Bronze schema 校验通过，`bronze_weather_daily_raw` 有 1830 行。
+- Silver schema 校验通过，`silver_weather_daily_clean` 有 1830 行。
 - Silver 表中有 `weather_date`、`is_rainy_day`、`is_hot_day`、`is_freezing_day`。
 
 ## Lesson 2：Gold → Data Quality
@@ -121,8 +129,6 @@ databricks/02_clean_silver_weather.py
 
 ### 代码范围
 
-计划新增：
-
 ```text
 databricks/03_build_gold_weather_metrics.py
 databricks/04_data_quality_checks.py
@@ -134,7 +140,11 @@ docs/lesson-02-gold-data-quality.md
 - 创建 `gold_city_daily_weather_metrics`。
 - 创建 `gold_city_monthly_weather_summary`。
 - 创建 `gold_weather_risk_days`。
-- DQ 检查通过：非空、日期非空、daily 表无重复 city/date。
+- Gold daily 有 1830 行，Gold monthly 有 60 行。
+- Gold daily、monthly、risk 的 schema contract 校验通过。
+- Daily 无重复 `city + weather_date`，risk 无重复 `city + weather_date + risk_type`。
+- DQ notebook 输出 `Data Quality Summary: 10/10 passed`。
+- UI Workflow 按 Setup → Bronze → Silver → Gold → DQ 串行跑通。
 
 ## Lesson 3：Serving → REST API
 
@@ -142,7 +152,7 @@ docs/lesson-02-gold-data-quality.md
 
 - 为什么 API 不直接查 Delta / Spark。
 - Serving layer 的职责是低延迟查询。
-- Spring Boot API 如何从 Postgres/Lakebase 查数据并返回 JSON。
+- Node.js + Express 如何从 Postgres/Lakebase 查数据并返回 JSON。
 
 ### 简讲
 
@@ -154,24 +164,18 @@ docs/lesson-02-gold-data-quality.md
 计划新增：
 
 ```text
-backend-springboot/
+backend-node/
 docs/lesson-03-serving-api.md
 ```
 
 ### 验收标准
 
 - Serving database 能查询 daily/monthly/risk 表。
-- Spring Boot 能启动。
+- Node.js API 能通过 `npm start` 启动。
 - `/api/weather/cities` 返回城市列表。
 - `/api/weather/daily` 返回某城市某日期范围的天气数据。
 - `/api/weather/monthly` 返回某城市月度汇总。
 
-## 当前第一部分是否正确
+## Pipeline 重跑边界
 
-当前第一部分是正确的，因为它满足三个条件：
-
-1. 范围清楚：只覆盖 Raw → Bronze → Silver。
-2. 代码可运行：本地抓数脚本已经成功生成 `data/raw_weather_daily.csv`。
-3. 教学重点集中：Silver transform 已经包含字段标准化、日期特征、业务 flags。
-
-当前第一部分暂时不需要加入 Gold、DQ、Lakebase 或 API。那些内容应该从 Lesson 2 开始逐步加入。
+相同 CSV 串行重跑时，Bronze、Silver 和 Gold 使用 `overwrite` 写入，不会累积重复行。Bronze/Silver 的 `ingestion_timestamp` 会每次更新，因此不是严格的逐字段幂等；输入不变时，Gold 业务结果应保持一致。

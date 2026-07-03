@@ -53,8 +53,8 @@ Data Quality Checks
 | 0:15-0:45 | 创建 Gold Daily Metrics | `gold_city_daily_weather_metrics` |
 | 0:45-1:10 | 创建 Gold Monthly Summary | `gold_city_monthly_weather_summary` |
 | 1:10-1:30 | 创建 Gold Risk Days | `gold_weather_risk_days` |
-| 1:30-1:55 | 添加 Data Quality Checks | `04_data_quality_checks` |
-| 1:55-2:00 | 总结和作业 | 学生知道第三节 serving 目标 |
+| 1:30-1:50 | 添加 Data Quality Checks | `04_data_quality_checks` |
+| 1:50-2:00 | 串联 Workflow 并重跑 | Pipeline 全部通过 |
 
 ## 课前准备
 
@@ -63,6 +63,23 @@ Data Quality Checks
 ```text
 workspace.default.silver_weather_daily_clean
 ```
+
+所有层的字段名和数据类型统一定义在：
+
+```text
+databricks/00_table_schemas.py
+```
+
+Gold notebook 在写表前会根据该 schema contract 校验字段和数据类型。
+Schema notebook 也会使用这些定义幂等创建 Bronze、Silver 和三张 Gold Delta 表。
+
+如果手动粘贴 notebook，Gold 和 DQ 顶部需要用独立 cell 加载 schema 定义。例如 schema 定义在 `Setup` 中：
+
+```python
+%run ./Setup
+```
+
+Workflow 的不同 task 不共享 Python 变量，因此每个依赖 schema 常量的 notebook 都要显式加载 Setup/schema notebook。
 
 教师提前准备：
 
@@ -231,6 +248,17 @@ FREEZING
 STRONG_WIND
 ```
 
+风险表字段：
+
+```text
+city
+weather_date
+risk_type
+risk_level
+metric_value
+description
+```
+
 课堂重点：
 
 - Risk days 是事件表。
@@ -243,10 +271,14 @@ Data quality 检查目标：
 
 1. Silver 表不为空。
 2. Silver 表 `weather_date` 不为空。
-3. Gold daily 表不为空。
-4. Gold daily 表没有重复 `city + weather_date`。
-5. Gold monthly 表不为空。
-6. Risk table 可以为空，但要能成功查询。
+3. Gold daily 表符合 schema contract。
+4. Gold daily 表不为空。
+5. Gold daily 表没有重复 `city + weather_date`。
+6. Gold monthly 表符合 schema contract。
+7. Gold monthly 表不为空。
+8. Gold risk 表符合 schema contract。
+9. Gold risk 表可以为空，但要能成功查询。
+10. Gold risk 表没有重复 `city + weather_date + risk_type`。
 
 示例检查：
 
@@ -260,12 +292,12 @@ HAVING COUNT(*) > 1;
 课堂重点：
 
 - Data quality 不是为了“看起来专业”，而是为了阻止坏数据进入 serving layer。
-- 第一版只做简单 assert，后续可以扩展 Great Expectations / DLT expectations / alerting。
+- 第一版只做轻量 schema 和数据检查，后续可以扩展 DLT expectations / alerting。
 - Risk table 为空不一定是错误，因为某些数据集可能没有风险日。
 
 ## Step 6：Workflow 简讲
 
-本节只展示概念，不建议占用太多时间现场配置。
+本节只用 UI 建立一条简单 Workflow，不展开调度、重试和告警策略。
 
 推荐依赖顺序：
 
@@ -287,6 +319,8 @@ HAVING COUNT(*) > 1;
 - Notebook 的职责是 transform。
 - Data quality checks 应该放在 publish / serving 之前。
 
+相同 CSV 串行重跑时，表使用 `overwrite` 写入，不会累积重复数据。严格来说 Bronze/Silver 不是逐字段幂等，因为 `ingestion_timestamp` 每次都会更新；Gold 业务结果在输入不变时应保持一致。
+
 ## 验收标准
 
 学生完成本节后，Databricks 中应该有：
@@ -299,10 +333,12 @@ workspace.default.gold_weather_risk_days
 
 并且：
 
-- Gold daily 表有数据。
-- Gold monthly 表有数据。
+- Gold daily 表有 `1830` 行。
+- Gold monthly 表有 `60` 行。
+- Gold risk 表行数由当前风险规则决定，可以为空。
 - Gold daily 表没有重复 `city + weather_date`。
-- Data quality notebook 能完整跑完。
+- Gold risk 表没有重复 `city + weather_date + risk_type`。
+- Data quality notebook 输出 `Data Quality Summary: 10/10 passed`。
 
 ## 课堂提问
 

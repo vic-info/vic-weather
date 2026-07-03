@@ -83,7 +83,7 @@ pip3 install -r requirements.txt
 运行脚本：
 
 ```bash
-python3 scripts/fetch_open_meteo_weather.py
+python3 data/fetch_open_meteo_weather.py
 ```
 
 生成文件：
@@ -136,9 +136,10 @@ longitude
 
 ```text
 databricks/00_setup.py
+databricks/00_table_schemas.py
 ```
 
-它会创建：
+它们会创建：
 
 ```text
 workspace.default.weather
@@ -150,8 +151,21 @@ workspace.default.weather
 - `default` 是 schema。
 - `weather` 是 volume。
 - CSV 文件会上传到 volume。
+- `00_table_schemas` 集中展示 Raw、Bronze、Silver 和 Gold 的字段契约，并幂等创建各层空 Delta 表。
 
 不要在第一节课展开 Unity Catalog 权限模型。
+
+### Notebook 粘贴规则
+
+如果是导入 repo 中的 Databricks source file，`# MAGIC %run` 会按 notebook cell 执行。
+
+如果是手动粘贴代码，必须在 Bronze 和 Silver 顶部新建一个独立 cell，加载实际存放 schema 定义的 notebook。例如 schema 代码已合并到名为 `Setup` 的 notebook：
+
+```python
+%run ./Setup
+```
+
+`%run` 必须单独占一个 cell，并且路径使用 Databricks UI 中的实际 notebook 名称。
 
 上传本地文件：
 
@@ -179,6 +193,14 @@ databricks/01_ingest_bronze_weather.py
 workspace.default.bronze_weather_daily_raw
 ```
 
+默认数据的预期结果：
+
+```text
+Schema validation passed: raw_weather_csv
+Schema validation passed: bronze_weather_daily_raw
+row_count = 1830
+```
+
 课堂重点：
 
 - Bronze table 尽量保留原始字段。
@@ -201,6 +223,12 @@ databricks/02_clean_silver_weather.py
 workspace.default.silver_weather_daily_clean
 ```
 
+默认数据的预期行数：
+
+```text
+1830
+```
+
 Silver 主要变化：
 
 - `time` 转成 `weather_date`。
@@ -220,7 +248,7 @@ Silver 主要变化：
 
 当前第一节代码是正确的，理由如下：
 
-1. `scripts/fetch_open_meteo_weather.py` 已经实际跑通，生成了 `data/raw_weather_daily.csv`。
+1. `data/fetch_open_meteo_weather.py` 已经实际跑通，生成了 `data/raw_weather_daily.csv`。
 2. CSV 字段和 Bronze notebook 读取逻辑一致。
 3. Bronze notebook 只新增 `source` 和 `ingestion_timestamp`，没有提前做业务清洗。
 4. Silver notebook 才做字段重命名、日期解析和业务 flags，职责边界清楚。

@@ -6,6 +6,8 @@
 
 当前 starter repo 的 3 节课版本以 [README.md](/Users/sunhlf/Desktop/vicinfo/vic-wearther-big-data-course/README.md) 和 [docs/course-plan.md](/Users/sunhlf/Desktop/vicinfo/vic-wearther-big-data-course/docs/course-plan.md) 为准。
 
+本文档中的代码块用于解释完整项目；repo 中的实际 `.py` 文件和分课 lesson 文档是课堂执行时的权威来源。
+
 课程重点按下面方式取舍：
 
 核心必讲：
@@ -27,7 +29,7 @@
 
 课后扩展：
 
-- Node.js backend
+- Spring Boot alternative backend
 - React frontend
 - OAuth auth
 - Continuous sync
@@ -42,7 +44,7 @@ Lesson 2: Silver → Gold → Data Quality
 Lesson 3: Gold → Serving → REST API
 ```
 
-也就是说，本文件中的 Node.js、React、OAuth、Continuous sync、复杂 Workflow 等内容可以保留作参考，但不进入 6 小时主课。
+也就是说，第三节课使用 Node.js + Express 实现 API。本文件中的 Spring Boot、React、OAuth、Continuous sync、复杂 Workflow 等内容保留作课后参考。
 
 ## 目录
 
@@ -62,8 +64,8 @@ Lesson 3: Gold → Serving → REST API
 13. [Notebook 04：Data Quality Checks](#13-notebook-04data-quality-checks)
 14. [Databricks Workflow / Job](#14-databricks-workflow--job)
 15. [Lakebase Serving Layer](#15-lakebase-serving-layer)
-16. [Spring Boot Backend](#16-spring-boot-backend)
-17. [Optional：Node.js Backend](#17-optionalnodejs-backend)
+16. [Optional：Spring Boot Backend](#16-optional-spring-boot-backend)
+17. [Node.js Backend](#17-nodejs-backend)
 18. [API 设计文档](#18-api-设计文档)
 19. [End-to-End Demo Script](#19-end-to-end-demo-script)
 20. [README 模板](#20-readme-模板)
@@ -91,7 +93,7 @@ Databricks Gold Layer
         ↓
 Lakebase Postgres Serving Tables
         ↓
-Spring Boot / Node Backend API
+Node.js + Express REST API
         ↓
 Client / Postman / Frontend
 ```
@@ -105,7 +107,7 @@ Weather Lakehouse Serving System
 英文简历版项目名：
 
 ```text
-End-to-End Weather Lakehouse Serving Pipeline with Databricks, Lakebase, and Spring Boot
+End-to-End Weather Lakehouse Serving Pipeline with Databricks, Lakebase, and Node.js
 ```
 
 项目核心能力：
@@ -115,10 +117,10 @@ End-to-End Weather Lakehouse Serving Pipeline with Databricks, Lakebase, and Spr
 3. 使用 PySpark 做数据清洗、标准化、聚合。
 4. Gold Layer 保存在 Delta / Unity Catalog 中，作为 analytical source of truth。
 5. 将 Gold 表同步到 Lakebase Postgres。
-6. 使用 Spring Boot 暴露 REST API。
+6. 使用 Node.js + Express 暴露 REST API。
 7. 通过 Postman / Swagger 查询天气指标。
 
-Node.js backend 和 React frontend 保留为课后扩展，不作为 3 节课主线。
+Spring Boot 对照实现和 React frontend 保留为课后扩展，不作为 3 节课主线。
 
 ---
 
@@ -142,15 +144,14 @@ Serving Layer：
 
 Backend：
 
-- Spring Boot 3
-- Java 17
-- JdbcTemplate
-- PostgreSQL JDBC Driver
+- Node.js 20+
+- Express
+- `pg`
 - Swagger / OpenAPI
 
 Optional：
 
-- Node.js + Express
+- Spring Boot 3
 - React frontend
 
 ---
@@ -416,11 +417,11 @@ STRONG_WIND
 weather-lakehouse-serving-system
 ├── README.md
 ├── data/
+│   ├── fetch_open_meteo_weather.py
 │   └── raw_weather_daily.csv
-├── scripts/
-│   └── fetch_open_meteo_weather.py
 ├── databricks/
 │   ├── 00_setup.py
+│   ├── 00_table_schemas.py
 │   ├── 01_ingest_bronze_weather.py
 │   ├── 02_clean_silver_weather.py
 │   ├── 03_build_gold_weather_metrics.py
@@ -462,7 +463,7 @@ weather-lakehouse-serving-system
 创建文件：
 
 ```text
-scripts/fetch_open_meteo_weather.py
+data/fetch_open_meteo_weather.py
 ```
 
 代码：
@@ -523,7 +524,7 @@ print(f"Total rows: {len(final_df)}")
 运行：
 
 ```bash
-python scripts/fetch_open_meteo_weather.py
+python3 data/fetch_open_meteo_weather.py
 ```
 
 预期生成：
@@ -552,6 +553,7 @@ data/raw_weather_daily.csv
 
 ```text
 00_setup
+00_table_schemas
 01_ingest_bronze_weather
 02_clean_silver_weather
 03_build_gold_weather_metrics
@@ -622,6 +624,24 @@ spark.sql(f"SHOW SCHEMAS IN {catalog_name}").show(truncate=False)
 
 ---
 
+## 9.1 Notebook 00：Table Schemas
+
+Notebook 名称：
+
+```text
+00_table_schemas
+```
+
+该 notebook 集中定义 Raw、Bronze、Silver 和三张 Gold 表的 `StructType`，输出字段名、类型、顺序和 nullable 设置，并幂等创建所有 Delta 表。后续 notebook 通过以下命令共享 schema contract：
+
+```python
+# MAGIC %run ./00_table_schemas
+```
+
+Schema notebook 只在表不存在时创建空表，不会覆盖已有数据；各层 transform notebook 继续负责写入实际数据。
+
+---
+
 ## 10. Notebook 01：Ingest Bronze Weather
 
 Notebook 名称：
@@ -635,6 +655,8 @@ Notebook 名称：
 代码：
 
 ```python
+# MAGIC %run ./00_table_schemas
+
 from pyspark.sql.functions import current_timestamp, lit
 
 catalog_name = "workspace"
@@ -645,16 +667,20 @@ bronze_table = f"{catalog_name}.{schema_name}.bronze_weather_daily_raw"
 
 raw_df = (
     spark.read
+    .schema(RAW_WEATHER_SCHEMA)
     .option("header", "true")
-    .option("inferSchema", "true")
     .csv(raw_path)
 )
+
+validate_dataframe_schema(raw_df, RAW_WEATHER_SCHEMA, "raw_weather_csv")
 
 bronze_df = (
     raw_df
     .withColumn("source", lit("open_meteo"))
     .withColumn("ingestion_timestamp", current_timestamp())
 )
+
+validate_dataframe_schema(bronze_df, BRONZE_WEATHER_SCHEMA, "bronze_weather_daily_raw")
 
 (
     bronze_df.write
@@ -1191,12 +1217,12 @@ ORDER BY month;
 
 ---
 
-## 16. Spring Boot Backend
+## 16. Optional: Spring Boot Backend
 
 ### 16.1 Backend 目标
 
 ```text
-Spring Boot API
+Node.js API
         ↓
 Lakebase Postgres
         ↓
@@ -1710,9 +1736,9 @@ http://localhost:8080/swagger-ui.html
 
 ---
 
-## 17. Optional：Node.js Backend
+## 17. Node.js Backend
 
-如果同学更熟 TypeScript，可以做 Node.js 版本。
+三节主课使用 Node.js + Express 实现 REST API。Spring Boot 版本保留为可选的课后对照实现。
 
 依赖：
 
@@ -1957,14 +1983,14 @@ Gold Delta
         ↓
 Lakebase Postgres
         ↓
-Spring Boot API
+Node.js API
 ```
 
 重点解释：
 
 - Databricks 负责 batch processing 和 lakehouse analytics。
 - Lakebase 负责 operational serving。
-- Spring Boot 负责 API exposure。
+- Node.js + Express 负责 API exposure。
 
 ### Demo 2：展示 Raw CSV
 
@@ -2028,18 +2054,18 @@ LIMIT 10;
 
 讲解：Gold Delta table 是 analytical source of truth，Lakebase table 是 serving copy，给 API 做低延迟查询。
 
-### Demo 8：启动 Spring Boot
+### Demo 8：启动 Node.js API
 
 运行：
 
 ```bash
-mvn spring-boot:run
+npm start
 ```
 
-打开 Swagger：
+调用 API：
 
 ```text
-http://localhost:8080/swagger-ui.html
+http://localhost:3000/health
 ```
 
 调用：
@@ -2059,7 +2085,7 @@ http://localhost:8080/swagger-ui.html
 
 ## Overview
 
-This project builds an end-to-end weather analytics platform using Databricks, PySpark, Delta Lake, Lakebase Postgres, and Spring Boot.
+This project builds an end-to-end weather analytics platform using Databricks, PySpark, Delta Lake, Lakebase Postgres, and Node.js.
 
 The pipeline processes raw historical weather data through bronze, silver, and gold layers in Databricks, syncs curated Gold-layer tables into Lakebase Postgres, and exposes the metrics through REST APIs.
 
@@ -2070,7 +2096,7 @@ Raw Weather Data
 → Silver Cleaned Delta Table
 → Gold Analytical Tables
 → Lakebase Postgres Synced Tables
-→ Spring Boot REST API
+→ Node.js REST API
 
 ## Tech Stack
 
@@ -2079,8 +2105,9 @@ Raw Weather Data
 - Delta Lake
 - Unity Catalog
 - Lakebase Postgres
-- Spring Boot
-- PostgreSQL JDBC
+- Node.js
+- Express
+- PostgreSQL `pg`
 - Swagger
 
 ## Data Source
@@ -2122,7 +2149,7 @@ Gold tables are synced to Lakebase Postgres and exposed through REST APIs.
 2. Upload CSV to Databricks volume.
 3. Run Databricks notebooks.
 4. Sync Gold tables to Lakebase.
-5. Start Spring Boot API.
+5. Start Node.js API.
 6. Query endpoints with Swagger or Postman.
 ```
 
@@ -2130,16 +2157,16 @@ Gold tables are synced to Lakebase Postgres and exposed through REST APIs.
 
 ## 21. 简历 Bullet Points
 
-- Built an end-to-end weather analytics lakehouse using Databricks, PySpark, Delta Lake, Lakebase Postgres, and Spring Boot, processing raw weather data across bronze, silver, and gold layers.
+- Built an end-to-end weather analytics lakehouse using Databricks, PySpark, Delta Lake, Lakebase Postgres, and Node.js, processing raw weather data across bronze, silver, and gold layers.
 - Designed curated Gold-layer Delta tables for daily metrics, monthly summaries, and weather risk detection, then synced them into Lakebase Postgres for low-latency API serving.
-- Implemented a Spring Boot REST API backed by Lakebase Postgres to expose city-level weather metrics, monthly trends, and risk-day alerts to downstream clients.
+- Implemented a Node.js and Express REST API backed by Lakebase Postgres to expose city-level weather metrics, monthly trends, and risk-day alerts to downstream clients.
 - Added data quality checks to validate table freshness, null dates, duplicate keys, and pipeline output consistency before publishing serving tables.
 
 ---
 
-## 22. 教学安排
+## 22. 完整项目阶段（非 3 节主课安排）
 
-建议分 5 次课。
+下面是完整项目的 5 个技术阶段，用于课后扩展或更长课程。3 节主课的时间安排以 `docs/course-plan.md` 为准。
 
 ### Session 1：Architecture + Raw Data
 
@@ -2208,16 +2235,16 @@ Gold tables are synced to Lakebase Postgres and exposed through REST APIs.
 
 内容：
 
-1. 创建 Spring Boot project。
-2. 配置 Lakebase JDBC。
-3. 实现 Repository。
-4. 实现 Service。
-5. 实现 Controller。
+1. 创建 Node.js project。
+2. 配置 Lakebase `pg` connection pool。
+3. 实现 Express routes。
+4. 使用参数化 SQL 查询 serving tables。
+5. 添加错误处理和参数校验。
 6. 用 Swagger / Postman 测试 API。
 
 产出：
 
-- Spring Boot Weather API
+- Node.js Weather API
 
 ---
 
@@ -2261,7 +2288,7 @@ Lakebase：
 负责 operational serving。
 ```
 
-Spring Boot：
+Node.js + Express：
 
 ```text
 负责业务 API exposure。
@@ -2270,7 +2297,7 @@ Spring Boot：
 一句话总结：
 
 ```text
-Databricks processes the data, Lakebase serves the data, and Spring Boot exposes the data.
+Databricks processes the data, Lakebase serves the data, and Node.js exposes the data.
 ```
 
 ---
@@ -2288,7 +2315,7 @@ Export CSV / JDBC
     ↓
 Local Postgres / Supabase / Neon
     ↓
-Spring Boot API
+Node.js API
 ```
 
 README 里可以写：
@@ -2312,7 +2339,7 @@ In a production Databricks environment, this can be replaced by Lakebase synced 
 6. Gold tables。
 7. Databricks workflow job。
 8. Lakebase synced tables。
-9. Spring Boot backend API。
+9. Node.js backend API。
 10. Swagger / Postman examples。
 11. README。
 12. Architecture diagram。
@@ -2340,7 +2367,7 @@ Lakebase：
 
 Backend：
 
-- [ ] Spring Boot starts successfully
+- [ ] Node.js API starts successfully
 - [ ] `/api/weather/cities` works
 - [ ] `/api/weather/daily` works
 - [ ] `/api/weather/monthly` works
@@ -2362,13 +2389,13 @@ Documentation：
 中文：
 
 ```text
-这是一个端到端天气数据处理与服务系统：使用 Databricks 将原始天气数据处理成 Bronze、Silver、Gold 三层 Delta 表，再将 Gold 层同步到 Lakebase Postgres，最后通过 Spring Boot REST API 对外提供低延迟查询。
+这是一个端到端天气数据处理与服务系统：使用 Databricks 将原始天气数据处理成 Bronze、Silver、Gold 三层 Delta 表，再将 Gold 层同步到 Lakebase Postgres，最后通过 Node.js REST API 对外提供低延迟查询。
 ```
 
 英文：
 
 ```text
-This project builds an end-to-end weather analytics serving system using Databricks, PySpark, Delta Lake, Lakebase Postgres, and Spring Boot, transforming raw weather data through bronze, silver, and gold layers and exposing curated metrics through REST APIs.
+This project builds an end-to-end weather analytics serving system using Databricks, PySpark, Delta Lake, Lakebase Postgres, and Node.js, transforming raw weather data through bronze, silver, and gold layers and exposing curated metrics through REST APIs.
 ```
 
 这份可以直接放进 Notes。后面可以再拆成两份：

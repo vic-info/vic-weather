@@ -3,6 +3,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./00_table_schemas
+
+# COMMAND ----------
+
 from pyspark.sql.functions import current_timestamp, lit
 
 catalog_name = "workspace"
@@ -19,11 +23,12 @@ print(f"Writing Bronze table to: {bronze_table}")
 
 raw_df = (
     spark.read
+    .schema(RAW_WEATHER_SCHEMA)
     .option("header", "true")
-    .option("inferSchema", "true")
     .csv(raw_path)
 )
 
+validate_dataframe_schema(raw_df, RAW_WEATHER_SCHEMA, "raw_weather_csv")
 display(raw_df.limit(10))
 raw_df.printSchema()
 
@@ -34,6 +39,8 @@ bronze_df = (
     .withColumn("source", lit("open_meteo"))
     .withColumn("ingestion_timestamp", current_timestamp())
 )
+
+validate_dataframe_schema(bronze_df, BRONZE_WEATHER_SCHEMA, "bronze_weather_daily_raw")
 
 (
     bronze_df.write

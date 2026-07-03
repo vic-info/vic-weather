@@ -1,11 +1,11 @@
 # Data Directory
 
-Generated CSV files go here.
+This directory contains the weather download script and its generated CSV file.
 
-For Lesson 1, run:
+From the repository root, run:
 
 ```bash
-python3 scripts/fetch_open_meteo_weather.py
+python3 data/fetch_open_meteo_weather.py
 ```
 
 This creates:
@@ -14,4 +14,11 @@ This creates:
 data/raw_weather_daily.csv
 ```
 
-The CSV is intentionally ignored by Git because it is generated data.
+The repository includes a generated CSV so the Databricks lesson can run without
+calling the external API. Run the script again whenever you want to refresh it.
+
+Upload the generated CSV to the Databricks Volume path:
+
+```text
+/Volumes/workspace/default/weather/raw_weather_daily.csv
+```
