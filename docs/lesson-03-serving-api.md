@@ -49,9 +49,9 @@ Swagger / Postman / curl
 | 时间 | 内容 | 产出 |
 | --- | --- | --- |
 | 0:00-0:20 | 解释 serving layer | 学生理解为什么需要 Postgres/Lakebase |
-| 0:20-0:45 | 同步或导出 Gold 表 | serving tables |
-| 0:45-1:05 | 用 SQL 验证 serving tables | daily/monthly/risk 查询成功 |
-| 1:05-1:40 | 创建最小 Express API | `/cities`、`/daily`、`/monthly` |
+| 0:20-0:45 | 同步 Gold daily 表 | daily serving table |
+| 0:45-1:05 | 用 SQL 验证 serving table | daily 查询成功 |
+| 1:05-1:40 | 创建最小 Express API | `/cities`、`/daily` |
 | 1:40-1:55 | Swagger / Postman / curl 测试 | JSON response |
 | 1:55-2:00 | 项目总结 | end-to-end demo |
 
@@ -68,10 +68,18 @@ workspace.default.gold_weather_risk_days
 教师提前准备：
 
 1. Lakebase project 或普通 Postgres 替代环境。
-2. 已同步的 daily、monthly、risk serving tables。
+2. 已同步的 daily serving table。
 3. 数据库连接字符串。
 4. Node.js 20+ 和 npm。
 5. Postman 或浏览器。
+
+Lakebase synced tables 可以在 Catalog UI 中逐张创建，也可以运行：
+
+```text
+databricks/05_sync_gold_to_lakebase.py
+```
+
+该 notebook 使用 Snapshot 模式创建 daily synced table。当前课程环境的 `DATABASE_TABLE_SYNC` active pipeline 配额为 1，因此 `SYNC_TABLES` 列表只启用 `weather_daily_metrics`。Monthly 和 risk synced tables 保留为升级配额后的扩展。运行前应先确认 Lesson 2 DQ 已通过。
 
 ## Step 1：为什么需要 Serving Layer
 
@@ -96,11 +104,9 @@ Node.js + Express:
 
 ```text
 gold_city_daily_weather_metrics    → weather_daily_metrics
-gold_city_monthly_weather_summary → weather_monthly_summary
-gold_weather_risk_days             → weather_risk_days
 ```
 
-第一版使用 snapshot sync 或手动同步，不在课堂实现 continuous sync。
+当前环境只允许 1 个 active database-table-sync pipeline。Monthly 和 risk 仍保留在 Gold 层，升级配额后可按相同方式增加到 `SYNC_TABLES` 列表。第一版使用 Snapshot，不在课堂实现 continuous sync。
 
 ## Step 3：先验证 Serving Tables
 
@@ -108,8 +114,6 @@ gold_weather_risk_days             → weather_risk_days
 
 ```sql
 SELECT * FROM weather_daily_metrics LIMIT 10;
-SELECT * FROM weather_monthly_summary LIMIT 10;
-SELECT * FROM weather_risk_days LIMIT 10;
 ```
 
 业务查询示例：
@@ -121,11 +125,6 @@ WHERE city = 'San Francisco'
   AND weather_date BETWEEN '2024-01-01' AND '2024-01-31'
 ORDER BY weather_date;
 
-SELECT *
-FROM weather_monthly_summary
-WHERE city = 'San Francisco'
-  AND year = 2024
-ORDER BY month;
 ```
 
 先验证 SQL，再写 API。SQL 本身查不到数据时，不要先修改 Express route。
@@ -138,12 +137,12 @@ ORDER BY month;
 GET /health
 GET /api/weather/cities
 GET /api/weather/daily?city=San Francisco&from=2024-01-01&to=2024-01-31
-GET /api/weather/monthly?city=San Francisco&year=2024
 ```
 
 课后扩展：
 
 ```text
+GET /api/weather/monthly?city=San Francisco&year=2024
 GET /api/weather/risks?city=San Francisco
 GET /api/weather/risks?city=San Francisco&riskType=HEAVY_RAIN
 ```
@@ -288,34 +287,6 @@ router.get("/daily", async (req, res, next) => {
   }
 });
 
-router.get("/monthly", async (req, res, next) => {
-  const { city, year } = req.query;
-  if (!city || !year) {
-    return res.status(400).json({ error: "city and year are required" });
-  }
-
-  try {
-    const result = await pool.query(
-      `SELECT city, year, month,
-              avg_mean_temp_c AS "avgMeanTempC",
-              max_temp_c AS "maxTempC",
-              min_temp_c AS "minTempC",
-              total_precipitation_mm AS "totalPrecipitationMm",
-              rainy_days AS "rainyDays",
-              hot_days AS "hotDays",
-              freezing_days AS "freezingDays",
-              avg_wind_speed_kmh AS "avgWindSpeedKmh"
-       FROM weather_monthly_summary
-       WHERE city = $1 AND year = $2
-       ORDER BY month`,
-      [city, Number(year)]
-    );
-    res.json(result.rows);
-  } catch (error) {
-    next(error);
-  }
-});
-
 module.exports = router;
 ```
 
@@ -344,7 +315,6 @@ npm run dev
 curl "http://localhost:3000/health"
 curl "http://localhost:3000/api/weather/cities"
 curl "http://localhost:3000/api/weather/daily?city=San%20Francisco&from=2024-01-01&to=2024-01-31"
-curl "http://localhost:3000/api/weather/monthly?city=San%20Francisco&year=2024"
 ```
 
 Swagger 只做简短演示，不在课堂现场编写完整 OpenAPI 文档。
@@ -353,20 +323,19 @@ Swagger 只做简短演示，不在课堂现场编写完整 OpenAPI 文档。
 
 1. 展示 Raw、Bronze、Silver、Gold 链路。
 2. 展示 Data Quality `10/10 passed`。
-3. 查询 Lakebase/Postgres serving tables。
+3. 查询 Lakebase/Postgres daily serving table。
 4. 启动 Node.js API。
-5. 调用 `/health`、`/cities`、`/daily`、`/monthly`。
+5. 调用 `/health`、`/cities`、`/daily`。
 6. 展示 Swagger、Postman 或 curl 返回的 JSON。
 
 ## 验收标准
 
-- Serving database 中存在 daily、monthly、risk 表。
-- SQL 可以查询 daily 和 monthly 数据。
+- Serving database 中存在 daily 表。
+- SQL 可以查询 daily 数据。
 - Node.js API 可以通过 `npm start` 启动。
 - `/health` 返回 `{"status":"ok"}`。
 - `/api/weather/cities` 返回城市列表。
 - `/api/weather/daily` 返回指定城市和日期范围的数据。
-- `/api/weather/monthly` 返回指定城市和年份的月度汇总。
 - 所有包含用户输入的 SQL 都使用参数化查询。
 
 ## 课堂提问
@@ -379,7 +348,7 @@ Swagger 只做简短演示，不在课堂现场编写完整 OpenAPI 文档。
 
 ## 课后作业
 
-1. 添加 `/api/weather/risks` endpoint。
+1. 配额允许后同步 monthly/risk 表，并添加 `/monthly` 和 `/risks` endpoints。
 2. 给 `/daily` 添加日期格式和日期范围校验。
 3. 添加 OpenAPI 文档和 Swagger UI。
 4. 为 routes 添加集成测试。

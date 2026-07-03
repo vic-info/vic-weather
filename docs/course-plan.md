@@ -164,17 +164,18 @@ docs/lesson-02-gold-data-quality.md
 计划新增：
 
 ```text
+databricks/05_sync_gold_to_lakebase.py
 backend-node/
 docs/lesson-03-serving-api.md
 ```
 
 ### 验收标准
 
-- Serving database 能查询 daily/monthly/risk 表。
+- Serving database 能查询 daily 表。
 - Node.js API 能通过 `npm start` 启动。
 - `/api/weather/cities` 返回城市列表。
 - `/api/weather/daily` 返回某城市某日期范围的天气数据。
-- `/api/weather/monthly` 返回某城市月度汇总。
+- Monthly/risk sync 和 endpoints 作为升级 pipeline 配额后的扩展。
 
 ## Pipeline 重跑边界
 

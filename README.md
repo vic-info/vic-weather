@@ -36,7 +36,8 @@ Raw CSV → Bronze Delta → Silver Delta → Gold Delta
 │   ├── 01_ingest_bronze_weather.py
 │   ├── 02_clean_silver_weather.py
 │   ├── 03_build_gold_weather_metrics.py
-│   └── 04_data_quality_checks.py
+│   ├── 04_data_quality_checks.py
+│   └── 05_sync_gold_to_lakebase.py
 ├── docs/
 └── requirements.txt
 ```
