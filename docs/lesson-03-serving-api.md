@@ -108,6 +108,30 @@ gold_city_daily_weather_metrics    → weather_daily_metrics
 
 当前环境只允许 1 个 active database-table-sync pipeline。Monthly 和 risk 仍保留在 Gold 层，升级配额后可按相同方式增加到 `SYNC_TABLES` 列表。第一版使用 Snapshot，不在课堂实现 continuous sync。
 
+### 在 Workflow 中添加 DQ Condition
+
+不要让 sync task 只依赖 Gold task。使用 Lesson 2 DQ notebook 输出的 task value 建立质量门：
+
+```text
+data_quality_checks
+        ↓  Run if: All done
+check_dq_passed (If/else condition)
+        ↓  true
+sync_gold_to_lakebase
+```
+
+在 Jobs UI 中配置：
+
+1. 将 DQ notebook task key 设为 `data_quality_checks`。
+2. 新建 **If/else condition** task，task key 使用 `check_dq_passed`。
+3. 依赖 `data_quality_checks`，`Run if dependencies` 选择 **All done**。
+4. 左值填写 `{{tasks.data_quality_checks.values.dq_passed}}`。
+5. Operator 选择 **Equals**，右值填写 `true`。
+6. `sync_gold_to_lakebase` 依赖 condition task 的 **true** outcome。
+
+DQ 失败时 notebook 会先保存 `dq_passed=false`，随后抛出异常，因此整个 Job 保持失败状态；
+condition task 仍可评估结果，但 Lakebase sync 不会运行。
+
 ## Step 3：先验证 Serving Tables
 
 在 Lakebase SQL Editor 或 Postgres client 中运行：
@@ -318,14 +342,16 @@ curl "http://localhost:3000/api/weather/daily?city=San%20Francisco&from=2024-01-
 
 1. 展示 Raw、Bronze、Silver、Gold 链路。
 2. 展示 Data Quality `10/10 passed`。
-3. 查询 Lakebase/Postgres daily serving table。
-4. 启动 Node.js API。
-5. 调用 `/health`、`/cities`、`/daily`。
-6. 展示 Swagger、Postman 或 curl 返回的 JSON。
+3. 展示 `dq_passed=true` 和 condition task 的 true outcome。
+4. 查询 Lakebase/Postgres daily serving table。
+5. 启动 Node.js API。
+6. 调用 `/health`、`/cities`、`/daily`。
+7. 展示 Swagger、Postman 或 curl 返回的 JSON。
 
 ## 验收标准
 
 - Serving database 中存在 daily 表。
+- Condition task 只在 `dq_passed=true` 时运行 Lakebase sync。
 - SQL 可以查询 daily 数据。
 - Node.js API 可以通过 `npm start` 启动。
 - `/health` 返回 `{"status":"ok"}`。

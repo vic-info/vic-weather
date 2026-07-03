@@ -144,6 +144,7 @@ docs/lesson-02-gold-data-quality.md
 - Gold daily、monthly、risk 的 schema contract 校验通过。
 - Daily 无重复 `city + weather_date`，risk 无重复 `city + weather_date + risk_type`。
 - DQ notebook 输出 `Data Quality Summary: 10/10 passed`。
+- DQ notebook 输出 Workflow task value `dq_passed=true`。
 - UI Workflow 按 Setup → Bronze → Silver → Gold → DQ 串行跑通。
 
 ## Lesson 3：Serving → REST API
@@ -172,6 +173,7 @@ docs/lesson-03-serving-api.md
 ### 验收标准
 
 - Serving database 能查询 daily 表。
+- UI Workflow 使用 condition task，只在 DQ 通过后执行 Lakebase sync。
 - Node.js API 能通过 `npm start` 启动。
 - `/api/weather/cities` 返回城市列表。
 - `/api/weather/daily` 返回某城市某日期范围的天气数据。

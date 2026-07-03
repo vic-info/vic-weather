@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weather Lakehouse Serving System</title>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #61707d;
+      --paper: #f6f7f4;
+      --white: #ffffff;
+      --line: #d8ddd8;
+      --orange: #e85d2a;
+      --teal: #087f8c;
+      --green: #2f7d4a;
+      --yellow: #e8b33f;
+      --red: #bd3a35;
+      --charcoal: #20272d;
+      --code: #11181d;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #dfe3df;
+      color: var(--ink);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    button { font: inherit; }
+
+    .viewport {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+    }
+
+    .deck {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      transform: scale(var(--scale, 1));
+      transform-origin: center center;
+      background: var(--paper);
+      box-shadow: 0 24px 72px rgba(23, 32, 42, 0.22);
+      overflow: hidden;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      padding: 70px 84px 78px;
+      background: var(--paper);
+      overflow: hidden;
+    }
+
+    .slide.active { display: block; }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 14px;
+      height: 100%;
+      background: var(--accent, var(--orange));
+    }
+
+    .eyebrow {
+      margin: 0 0 16px;
+      color: var(--accent, var(--orange));
+      font-size: 20px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: 70px; line-height: 1.05; margin-bottom: 24px; }
+    h2 { font-size: 48px; line-height: 1.12; margin-bottom: 32px; }
+    h3 { font-size: 27px; line-height: 1.25; margin-bottom: 12px; }
+    p, li { font-size: 23px; line-height: 1.52; }
+    strong { font-weight: 800; }
+    .lead { font-size: 31px; line-height: 1.42; color: #35424c; max-width: 1140px; }
+    .muted { color: var(--muted); }
+    .small { font-size: 18px; }
+    .big-number { font-size: 112px; font-weight: 850; line-height: 0.95; }
+
+    .title-slide {
+      background: var(--charcoal);
+      color: var(--white);
+      --accent: var(--orange);
+    }
+
+    .title-slide::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 430px;
+      height: 250px;
+      background: var(--orange);
+      clip-path: polygon(35% 0, 100% 0, 100% 100%, 0 100%);
+    }
+
+    .title-slide h1 { width: 980px; font-size: 78px; margin-top: 125px; }
+    .title-slide .lead { color: #dbe2e6; width: 920px; }
+    .title-meta { position: absolute; left: 84px; bottom: 82px; color: #aebbc4; font-size: 20px; }
+
+    .section-slide {
+      display: none;
+      background: var(--section-bg, var(--charcoal));
+      color: var(--white);
+    }
+
+    .section-slide.active { display: flex; align-items: center; }
+    .section-slide .section-number { font-size: 180px; font-weight: 900; color: var(--accent); line-height: 1; width: 310px; }
+    .section-slide h2 { font-size: 68px; max-width: 850px; margin-bottom: 18px; }
+    .section-slide p { max-width: 820px; color: #d9e0e4; font-size: 28px; }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+
+    .panel {
+      border-top: 6px solid var(--panel-accent, var(--orange));
+      background: var(--white);
+      padding: 28px 30px;
+      min-height: 190px;
+      border-radius: 4px;
+    }
+
+    .panel p:last-child { margin-bottom: 0; }
+    .panel .label { color: var(--panel-accent, var(--orange)); font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 14px;
+      align-items: center;
+      margin-top: 54px;
+    }
+
+    .flow-node {
+      min-height: 116px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 15px;
+      color: var(--white);
+      background: var(--charcoal);
+      border-top: 8px solid var(--node-accent, var(--orange));
+      font-size: 22px;
+      font-weight: 800;
+      border-radius: 3px;
+      position: relative;
+    }
+
+    .flow-node:not(:last-child)::after {
+      content: "›";
+      position: absolute;
+      right: -18px;
+      color: var(--muted);
+      font-size: 34px;
+      z-index: 3;
+    }
+
+    .course-line {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0;
+      margin-top: 60px;
+      border: 1px solid var(--line);
+    }
+
+    .course-step { padding: 34px; background: var(--white); min-height: 300px; border-right: 1px solid var(--line); }
+    .course-step:last-child { border-right: 0; }
+    .course-step .num { color: var(--accent); font-weight: 900; font-size: 58px; }
+    .course-step ul { margin: 18px 0 0; padding-left: 24px; }
+    .course-step li { font-size: 20px; margin-bottom: 8px; }
+
+    pre {
+      margin: 0;
+      padding: 28px 30px;
+      background: var(--code);
+      color: #e9eff2;
+      border-left: 7px solid var(--accent, var(--orange));
+      border-radius: 3px;
+      font: 19px/1.5 "SFMono-Regular", Consolas, monospace;
+      white-space: pre-wrap;
+      overflow: hidden;
+    }
+
+    code { font-family: "SFMono-Regular", Consolas, monospace; }
+    .kw { color: #69b7ff; }
+    .fn { color: #f1cf74; }
+    .str { color: #e99a7a; }
+    .cm { color: #7ca276; }
+
+    .image-frame {
+      background: #111820;
+      border: 1px solid #2b343d;
+      padding: 12px;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .image-frame img { width: 100%; display: block; object-fit: cover; }
+    .image-frame.bronze img { height: 480px; object-position: center 70%; }
+    .image-frame.sync img { height: 390px; object-position: center; }
+
+    .metric-row { display: flex; gap: 58px; margin-top: 46px; align-items: flex-end; }
+    .metric { min-width: 240px; }
+    .metric .value { font-size: 78px; font-weight: 850; color: var(--metric-color, var(--orange)); line-height: 1; }
+    .metric .name { margin-top: 12px; font-size: 21px; color: var(--muted); }
+
+    .schema-list { display: grid; grid-template-columns: 210px 1fr 120px; border-top: 1px solid var(--line); }
+    .schema-list > div { padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 18px; }
+    .schema-list .head { font-weight: 800; background: #e9ece8; }
+
+    .gate {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 56px;
+      align-items: center;
+      margin-top: 35px;
+    }
+
+    .gate-score {
+      height: 320px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      background: var(--green);
+      color: var(--white);
+      border-radius: 50%;
+    }
+
+    .gate-score strong { display: block; font-size: 92px; line-height: 1; }
+    .gate-score span { font-size: 20px; }
+    .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 30px; }
+    .check { font-size: 20px; padding: 13px 0 13px 34px; border-bottom: 1px solid var(--line); position: relative; }
+    .check::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 900; }
+
+    .api-window { border: 1px solid #bac2c7; background: var(--white); border-radius: 5px; overflow: hidden; }
+    .api-bar { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 16px; background: #eef1ef; border-bottom: 1px solid #cdd3d0; }
+    .api-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
+    .api-dot:nth-child(2) { background: var(--yellow); }
+    .api-dot:nth-child(3) { background: var(--green); }
+    .api-body { padding: 30px; }
+    .endpoint { display: grid; grid-template-columns: 90px 1fr; align-items: center; border: 1px solid #b8d8c3; margin-bottom: 15px; }
+    .method { background: var(--green); color: white; padding: 14px; text-align: center; font-weight: 850; }
+    .path { font: 19px "SFMono-Regular", Consolas, monospace; padding: 0 18px; }
+
+    .quote {
+      border-left: 10px solid var(--accent);
+      padding: 22px 0 22px 36px;
+      font-size: 38px;
+      line-height: 1.38;
+      max-width: 1240px;
+      margin: 80px auto 0;
+    }
+
+    .callout {
+      margin-top: 34px;
+      padding: 22px 28px;
+      background: #fff4d6;
+      border-left: 7px solid var(--yellow);
+      font-size: 21px;
+    }
+
+    .bottom-note { position: absolute; left: 84px; bottom: 46px; font-size: 17px; color: var(--muted); }
+
+    .controls {
+      position: absolute;
+      z-index: 20;
+      right: 28px;
+      bottom: 24px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .controls button {
+      width: 46px;
+      height: 42px;
+      border: 1px solid #aeb6b2;
+      background: rgba(255,255,255,.94);
+      color: var(--ink);
+      font-size: 26px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .controls button:hover { background: var(--white); border-color: var(--orange); }
+    .counter { position: absolute; left: 30px; bottom: 29px; z-index: 20; color: #66737d; font: 17px "SFMono-Regular", Consolas, monospace; }
+    .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; background: #c9cfcb; z-index: 20; }
+    .progress span { display: block; height: 100%; width: 0; background: var(--orange); transition: width .18s ease; }
+
+    @media print {
+      html, body { overflow: visible; background: white; }
+      .viewport { display: block; position: static; }
+      .deck { width: 1600px; height: auto; transform: none !important; box-shadow: none; overflow: visible; }
+      .slide { display: block !important; position: relative; width: 1600px; height: 900px; page-break-after: always; }
+      .controls, .counter, .progress { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="viewport">
+    <div class="deck" id="deck">
+      <section class="slide title-slide active">
+        <p class="eyebrow">End-to-End Data Engineering Course</p>
+        <h1>Weather Lakehouse<br>Serving System</h1>
+        <p class="lead">从 Open-Meteo 原始数据，到 Databricks Gold，再到 Lakebase 与 Node.js REST API。</p>
+        <p class="title-meta">3 lessons · 6 hours · 1 production-shaped data path</p>
+      </section>
+
+      <section class="slide" style="--accent: var(--teal)">
+        <p class="eyebrow">The Question</p>
+        <h2>一条天气 API 响应，背后经过了什么？</h2>
+        <div class="quote">学生最终看到的是 JSON。数据工程师负责保证它来自正确的源、正确的粒度、通过质量检查，并且能被低延迟查询。</div>
+        <div class="flow" style="margin-top: 70px">
+          <div class="flow-node" style="--node-accent:#e85d2a">Raw</div>
+          <div class="flow-node" style="--node-accent:#8c6d4f">Bronze</div>
+          <div class="flow-node" style="--node-accent:#70808c">Silver</div>
+          <div class="flow-node" style="--node-accent:#e8b33f">Gold</div>
+          <div class="flow-node" style="--node-accent:#2f7d4a">DQ</div>
+          <div class="flow-node" style="--node-accent:#087f8c">Lakebase</div>
+          <div class="flow-node" style="--node-accent:#bd3a35">REST API</div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--orange)">
+        <p class="eyebrow">Course Map</p>
+        <h2>三节课只讲一条完整主线</h2>
+        <div class="course-line">
+          <div class="course-step">
+            <div class="num">01</div>
+            <h3>Raw → Bronze → Silver</h3>
+            <ul><li>抓取与上传数据</li><li>Medallion 分层</li><li>PySpark transform</li></ul>
+          </div>
+          <div class="course-step">
+            <div class="num">02</div>
+            <h3>Gold → Data Quality</h3>
+            <ul><li>表粒度设计</li><li>聚合与风险规则</li><li>10 项质量门槛</li></ul>
+          </div>
+          <div class="course-step">
+            <div class="num">03</div>
+            <h3>Serving → REST API</h3>
+            <ul><li>Lakebase synced table</li><li>Express + PostgreSQL</li><li>Swagger 与测试</li></ul>
+          </div>
+        </div>
+        <p class="bottom-note">核心能力：分层、转换、建模、质量、Serving、API。</p>
+      </section>
+
+      <section class="slide" style="--accent: var(--teal)">
+        <p class="eyebrow">Dataset</p>
+        <h2>小数据集也能覆盖完整工程链路</h2>
+        <div class="metric-row">
+          <div class="metric" style="--metric-color:var(--orange)"><div class="value">5</div><div class="name">cities</div></div>
+          <div class="metric" style="--metric-color:var(--teal)"><div class="value">366</div><div class="name">days per city</div></div>
+          <div class="metric" style="--metric-color:var(--green)"><div class="value">1,830</div><div class="name">daily observations</div></div>
+          <div class="metric" style="--metric-color:var(--red)"><div class="value">11</div><div class="name">raw columns</div></div>
+        </div>
+        <div class="grid-2" style="margin-top: 68px">
+          <div><h3>输入</h3><p class="muted">Open-Meteo historical API，包含温度、降雨、降雪、风速、城市与坐标。</p></div>
+          <div><h3>为什么足够</h3><p class="muted">行数不大，学生可以快速重跑；字段足够丰富，可以演示清洗、聚合和风险事件。</p></div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--yellow)">
+        <p class="eyebrow">Architecture</p>
+        <h2>每一层只承担一种职责</h2>
+        <div class="grid-4" style="margin-top: 42px">
+          <div class="panel" style="--panel-accent:#8c6d4f"><p class="label">BRONZE</p><h3>保留事实</h3><p>尽量贴近源数据，便于回放与审计。</p></div>
+          <div class="panel" style="--panel-accent:#70808c"><p class="label">SILVER</p><h3>统一语义</h3><p>标准字段、日期维度和业务 flags。</p></div>
+          <div class="panel" style="--panel-accent:#e8b33f"><p class="label">GOLD</p><h3>回答问题</h3><p>按消费场景重建粒度与指标。</p></div>
+          <div class="panel" style="--panel-accent:#087f8c"><p class="label">SERVING</p><h3>低延迟交付</h3><p>为 API 提供稳定、简单的查询模型。</p></div>
+        </div>
+        <div class="callout">分层不是为了增加 notebook 数量，而是为了隔离变化、明确责任。</div>
+      </section>
+
+      <section class="slide section-slide" style="--accent:#e85d2a; --section-bg:#20272d">
+        <div class="section-number">01</div>
+        <div><p class="eyebrow">Lesson One</p><h2>把原始天气数据变成可信明细</h2><p>Raw → Volume → Bronze → Silver</p></div>
+      </section>
+
+      <section class="slide" style="--accent: var(--orange)">
+        <p class="eyebrow">Raw & Volume</p>
+        <h2>先固定输入，再讨论转换</h2>
+        <div class="grid-2">
+          <div>
+            <pre><span class="cm"># local</span>
+python3 data/fetch_open_meteo_weather.py
+
+<span class="cm"># Databricks Volume</span>
+/Volumes/workspace/default/weather/
+  raw_weather_daily.csv</pre>
+            <div class="callout"><strong>Volume</strong> 保存文件；<strong>Delta table</strong> 保存可查询的数据集。两者不是同一个概念。</div>
+          </div>
+          <div>
+            <h3>三段式命名</h3>
+            <div class="schema-list">
+              <div class="head">层级</div><div class="head">本项目</div><div class="head">作用</div>
+              <div>Catalog</div><div><code>workspace</code></div><div>顶层边界</div>
+              <div>Schema</div><div><code>default</code></div><div>逻辑分组</div>
+              <div>Volume</div><div><code>weather</code></div><div>原始文件</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent:#8c6d4f">
+        <p class="eyebrow">Bronze</p>
+        <h2>Bronze 保留源字段，只补充摄取上下文</h2>
+        <div class="grid-2" style="grid-template-columns: 0.85fr 1.35fr">
+          <div>
+            <pre>bronze_df = (
+  raw_df
+  .withColumn(<span class="str">"source"</span>, lit(<span class="str">"open-meteo"</span>))
+  .withColumn(
+    <span class="str">"ingestion_timestamp"</span>,
+    current_timestamp()
+  )
+)</pre>
+            <p style="margin-top:26px">不重命名、不聚合、不加入业务规则。</p>
+          </div>
+          <div class="image-frame bronze"><img src="assets/bronze-table.png" alt="Databricks Bronze table result"></div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent:#70808c">
+        <p class="eyebrow">Silver</p>
+        <h2>Silver 把技术字段翻译成业务语义</h2>
+        <div class="grid-2">
+          <div class="grid-2" style="gap:18px">
+            <div class="panel" style="--panel-accent:#70808c"><h3>过滤</h3><p>丢弃关键字段为空的记录。</p></div>
+            <div class="panel" style="--panel-accent:#70808c"><h3>解析</h3><p><code>time</code> → <code>weather_date</code></p></div>
+            <div class="panel" style="--panel-accent:#70808c"><h3>重命名</h3><p>统一为清晰的业务字段。</p></div>
+            <div class="panel" style="--panel-accent:#70808c"><h3>派生</h3><p>rainy / hot / freezing flags。</p></div>
+          </div>
+          <pre>silver_df = (
+  bronze_df
+  .filter(col(<span class="str">"time"</span>).isNotNull())
+  .withColumn(<span class="str">"weather_date"</span>, to_date(<span class="str">"time"</span>))
+  .withColumn(<span class="str">"year"</span>, year(<span class="str">"weather_date"</span>))
+  .withColumn(
+    <span class="str">"is_rainy_day"</span>,
+    col(<span class="str">"precipitation_sum"</span>) &gt; 0
+  )
+)</pre>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--green)">
+        <p class="eyebrow">Lesson One Checkpoint</p>
+        <h2>第一节课结束时，学生应该能证明这四件事</h2>
+        <div class="grid-2" style="margin-top: 50px">
+          <div class="check-grid" style="grid-template-columns:1fr">
+            <div class="check">CSV 共 1,830 行，5 个城市各 366 行</div>
+            <div class="check">Bronze schema 与 raw contract 一致</div>
+            <div class="check">Silver 新增日期维度与业务 flags</div>
+            <div class="check">Bronze 和 Silver 都可通过 SQL 查询</div>
+          </div>
+          <div class="panel" style="--panel-accent:var(--green); min-height:300px">
+            <p class="label">KEY IDEA</p>
+            <h3>Bronze 解释“数据从哪里来”</h3>
+            <h3 style="margin-top:30px">Silver 解释“字段现在是什么意思”</h3>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide section-slide" style="--accent:#e8b33f; --section-bg:#20272d">
+        <div class="section-number">02</div>
+        <div><p class="eyebrow">Lesson Two</p><h2>让数据模型直接回答业务问题</h2><p>Silver → Gold → Data Quality</p></div>
+      </section>
+
+      <section class="slide" style="--accent: var(--yellow)">
+        <p class="eyebrow">Grain</p>
+        <h2>Gold 设计从“每一行代表什么”开始</h2>
+        <div class="grid-3" style="margin-top: 48px">
+          <div class="panel" style="--panel-accent:var(--teal)"><p class="label">DAILY METRICS</p><h3><code>city + weather_date</code></h3><p>每日趋势与 API 主表。</p></div>
+          <div class="panel" style="--panel-accent:var(--yellow)"><p class="label">MONTHLY SUMMARY</p><h3><code>city + year + month</code></h3><p>月度聚合与趋势比较。</p></div>
+          <div class="panel" style="--panel-accent:var(--red)"><p class="label">RISK EVENTS</p><h3><code>city + date + risk_type</code></h3><p>一个日期可以出现多个事件。</p></div>
+        </div>
+        <div class="callout">粒度决定主键、聚合方式、重复检查和 API 查询方式。</div>
+      </section>
+
+      <section class="slide" style="--accent: var(--teal)">
+        <p class="eyebrow">Gold Daily</p>
+        <h2>Daily 表把明细转成可消费的每日指标</h2>
+        <div class="grid-2">
+          <pre>severity = (
+  when(col(<span class="str">"is_rainy_day"</span>), 1).otherwise(0)
+  + when(col(<span class="str">"is_hot_day"</span>), 1).otherwise(0)
+  + when(col(<span class="str">"is_freezing_day"</span>), 1).otherwise(0)
+  + when(col(<span class="str">"max_wind_speed_kmh"</span>) &gt; 40, 1)
+      .otherwise(0)
+)</pre>
+          <div>
+            <div class="big-number" style="color:var(--teal)">0–4</div>
+            <h3 style="margin-top:18px">weather_severity_score</h3>
+            <p class="muted">这是业务规则，不是原始字段。规则改变时，应重算 Gold，而不需要重新抓取 Raw。</p>
+            <div class="callout">Gold 不是“更干净的 Silver”，而是面向消费重新建模的数据产品。</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--red)">
+        <p class="eyebrow">Gold Models</p>
+        <h2>聚合表与事件表解决不同问题</h2>
+        <div class="grid-2">
+          <div>
+            <h3>Monthly summary</h3>
+            <p class="muted">使用 <code>groupBy + agg</code>，牺牲明细换取更直接的年度与月度分析。</p>
+            <pre>.groupBy(<span class="str">"city"</span>, <span class="str">"year"</span>, <span class="str">"month"</span>)
+.agg(
+  avg(<span class="str">"mean_temp_c"</span>),
+  sum(<span class="str">"precipitation_mm"</span>),
+  sum(when(<span class="str">"is_rainy_day"</span>, 1))
+)</pre>
+          </div>
+          <div>
+            <h3>Risk events</h3>
+            <p class="muted">每类规则先生成同构 DataFrame，再用 <code>unionByName</code> 合并。</p>
+            <div class="grid-2" style="gap:14px">
+              <div class="panel" style="--panel-accent:var(--red); min-height:120px"><strong>HEAVY_RAIN</strong></div>
+              <div class="panel" style="--panel-accent:var(--orange); min-height:120px"><strong>HOT_DAY</strong></div>
+              <div class="panel" style="--panel-accent:var(--teal); min-height:120px"><strong>FREEZING</strong></div>
+              <div class="panel" style="--panel-accent:var(--yellow); min-height:120px"><strong>STRONG_WIND</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent:#70808c">
+        <p class="eyebrow">Schema Contract</p>
+        <h2>字段契约集中定义，notebook 只负责实现</h2>
+        <div class="grid-2" style="grid-template-columns: 0.9fr 1.1fr">
+          <div>
+            <pre>LAYER_SCHEMAS = {
+  <span class="str">"raw_weather_csv"</span>: RAW_SCHEMA,
+  <span class="str">"bronze_weather_daily_raw"</span>: BRONZE_SCHEMA,
+  <span class="str">"silver_weather_daily_clean"</span>: SILVER_SCHEMA,
+  <span class="str">"gold_city_daily_weather_metrics"</span>: GOLD_DAILY,
+  <span class="str">"gold_city_monthly_weather_summary"</span>: GOLD_MONTHLY,
+  <span class="str">"gold_weather_risk_days"</span>: GOLD_RISK,
+}</pre>
+          </div>
+          <div class="schema-list">
+            <div class="head">检查</div><div class="head">发现的问题</div><div class="head">结果</div>
+            <div>Missing</div><div>应该存在但没有的字段</div><div>FAIL</div>
+            <div>Unexpected</div><div>contract 未声明的字段</div><div>FAIL</div>
+            <div>Wrong type</div><div>字段名相同但类型不一致</div><div>FAIL</div>
+            <div>Matched</div><div>字段集合与类型完全一致</div><div>PASS</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--green)">
+        <p class="eyebrow">Data Quality</p>
+        <h2>质量检查是发布门槛，不是课后报告</h2>
+        <div class="gate">
+          <div class="gate-score"><div><strong>10/10</strong><span>checks passed</span></div></div>
+          <div class="check-grid">
+            <div class="check">Silver 非空</div><div class="check">Silver 日期非空</div>
+            <div class="check">Daily schema</div><div class="check">Daily 非空</div>
+            <div class="check">Daily 主键唯一</div><div class="check">Monthly schema</div>
+            <div class="check">Monthly 非空</div><div class="check">Risk schema</div>
+            <div class="check">Risk 可查询</div><div class="check">Risk 事件唯一</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--orange)">
+        <p class="eyebrow">Workflow & Rerun</p>
+        <h2>Workflow 负责编排，notebook 负责转换</h2>
+        <div class="flow" style="grid-template-columns:repeat(7,1fr)">
+          <div class="flow-node">Setup</div>
+          <div class="flow-node">Bronze</div>
+          <div class="flow-node">Silver</div>
+          <div class="flow-node">Gold</div>
+          <div class="flow-node">DQ</div>
+          <div class="flow-node" style="--node-accent:var(--green)">DQ = true?</div>
+          <div class="flow-node" style="--node-accent:var(--teal)">Sync</div>
+        </div>
+        <div class="grid-2" style="margin-top: 70px">
+          <div><h3>质量门</h3><p class="muted">DQ 输出 task value；condition 只有在 <code>dq_passed=true</code> 时进入 Sync。</p></div>
+          <div><h3>可重复运行</h3><p class="muted">Bronze、Silver、Gold 使用 overwrite；输入不变时，Gold 业务结果保持一致。</p></div>
+        </div>
+      </section>
+
+      <section class="slide section-slide" style="--accent:#087f8c; --section-bg:#20272d">
+        <div class="section-number">03</div>
+        <div><p class="eyebrow">Lesson Three</p><h2>把分析结果交付成在线服务</h2><p>Gold → Lakebase → Node.js REST API</p></div>
+      </section>
+
+      <section class="slide" style="--accent: var(--teal)">
+        <p class="eyebrow">Serving Layer</p>
+        <h2>API 不应该把每次请求交给 Spark</h2>
+        <div class="grid-2" style="grid-template-columns: .8fr 1.2fr">
+          <div>
+            <div class="panel" style="--panel-accent:var(--yellow)"><h3>Delta / Spark</h3><p>批处理、历史分析、事实来源。</p></div>
+            <div class="panel" style="--panel-accent:var(--teal); margin-top:20px"><h3>Lakebase / Postgres</h3><p>稳定连接、低延迟查询、API serving。</p></div>
+          </div>
+          <div class="image-frame sync"><img src="assets/lakebase-daily-table.png" alt="Lakebase SQL Editor showing the synced daily weather table"></div>
+        </div>
+        <p class="bottom-note">课程环境受 active sync pipeline 配额限制，只启用 daily serving table；monthly 与 risk 保留为扩展配置。</p>
+      </section>
+
+      <section class="slide" style="--accent: var(--teal)">
+        <p class="eyebrow">Node.js Backend</p>
+        <h2>后端只做四件关键的事</h2>
+        <div class="grid-4" style="margin-top:44px">
+          <div class="panel" style="--panel-accent:var(--teal)"><p class="label">CONFIG</p><h3>读取连接配置</h3><p>URL、endpoint、profile。</p></div>
+          <div class="panel" style="--panel-accent:var(--green)"><p class="label">AUTH</p><h3>获取数据库 token</h3><p>CLI 自动刷新或短期 OAuth token。</p></div>
+          <div class="panel" style="--panel-accent:var(--yellow)"><p class="label">QUERY</p><h3>参数化 SQL</h3><p>避免拼接用户输入。</p></div>
+          <div class="panel" style="--panel-accent:var(--orange)"><p class="label">HTTP</p><h3>稳定 JSON contract</h3><p>校验、状态码与错误处理。</p></div>
+        </div>
+        <div class="callout">Lakebase snippet 没有 password。连接池必须显式传入 OAuth token，并保留 SSL。</div>
+      </section>
+
+      <section class="slide" style="--accent: var(--green)">
+        <p class="eyebrow">REST API</p>
+        <h2>Endpoint 围绕用户问题，而不是数据库表名</h2>
+        <div class="grid-2" style="grid-template-columns: .9fr 1.1fr">
+          <div class="api-window">
+            <div class="api-bar"><span class="api-dot"></span><span class="api-dot"></span><span class="api-dot"></span></div>
+            <div class="api-body">
+              <div class="endpoint"><span class="method">GET</span><span class="path">/health</span></div>
+              <div class="endpoint"><span class="method">GET</span><span class="path">/api/weather/cities</span></div>
+              <div class="endpoint"><span class="method">GET</span><span class="path">/api/weather/daily</span></div>
+            </div>
+          </div>
+          <pre><span class="kw">WHERE</span> city = $1
+  <span class="kw">AND</span> weather_date
+      <span class="kw">BETWEEN</span> $2::<span class="fn">date</span>
+          <span class="kw">AND</span> $3::<span class="fn">date</span>
+<span class="kw">ORDER BY</span> weather_date
+
+<span class="cm">-- values are passed separately</span>
+[city, from, to]</pre>
+        </div>
+        <div class="callout">参数化查询同时解决 SQL injection 风险和字符串转义问题。</div>
+      </section>
+
+      <section class="slide" style="--accent: var(--orange)">
+        <p class="eyebrow">OpenAPI & Swagger</p>
+        <h2>API contract 可以被人阅读，也可以被工具执行</h2>
+        <div class="grid-2">
+          <div class="api-window">
+            <div class="api-bar"><span class="api-dot"></span><span class="api-dot"></span><span class="api-dot"></span></div>
+            <div class="api-body">
+              <h3 style="font-size:32px">Weather Serving API</h3>
+              <p class="muted small">OpenAPI 3.0.3</p>
+              <div class="endpoint"><span class="method">GET</span><span class="path">/api/weather/daily</span></div>
+              <p class="small"><strong>Parameters</strong> city · from · to</p>
+              <p class="small"><strong>Responses</strong> 200 · 400 · 500</p>
+            </div>
+          </div>
+          <div>
+            <div class="panel" style="--panel-accent:var(--orange)"><h3><code>/api-docs</code></h3><p>浏览参数、schema，并直接执行请求。</p></div>
+            <div class="panel" style="--panel-accent:var(--teal); margin-top:20px"><h3><code>/openapi.json</code></h3><p>机器可读 contract，可用于生成 client 或测试。</p></div>
+            <p style="margin-top:25px"><strong>7 tests passed</strong>：route、validation、OpenAPI、Swagger、config 与 auth。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" style="--accent: var(--green)">
+        <p class="eyebrow">End-to-End Demo</p>
+        <h2>最终演示应按数据流顺序完成</h2>
+        <div class="grid-3" style="margin-top:38px">
+          <div class="panel" style="--panel-accent:#8c6d4f"><p class="label">1 — BUILD</p><h3>展示分层结果</h3><p>Bronze、Silver、三张 Gold。</p></div>
+          <div class="panel" style="--panel-accent:var(--green)"><p class="label">2 — VERIFY</p><h3>通过质量门槛</h3><p><code>10/10 passed</code></p></div>
+          <div class="panel" style="--panel-accent:var(--teal)"><p class="label">3 — SYNC</p><h3>查询 serving table</h3><p>确认 Postgres 中存在 daily 数据。</p></div>
+          <div class="panel" style="--panel-accent:var(--orange)"><p class="label">4 — START</p><h3>启动 Node.js</h3><p><code>npm start</code></p></div>
+          <div class="panel" style="--panel-accent:var(--red)"><p class="label">5 — CALL</p><h3>请求真实 API</h3><p>health、cities、daily。</p></div>
+          <div class="panel" style="--panel-accent:var(--yellow)"><p class="label">6 — INSPECT</p><h3>打开 Swagger</h3><p>验证 contract 与 response。</p></div>
+        </div>
+      </section>
+
+      <section class="slide title-slide" style="--accent:var(--green)">
+        <p class="eyebrow">Course Synthesis</p>
+        <h1 style="font-size:66px; width:1100px">一个完整数据产品，需要每一层都能解释自己的责任</h1>
+        <div class="grid-3" style="width:1180px; margin-top:55px">
+          <div><h3 style="color:#e8b33f">正确的数据</h3><p style="color:#dbe2e6">schema contract、粒度、业务规则与质量门槛。</p></div>
+          <div><h3 style="color:#66c18c">正确的边界</h3><p style="color:#dbe2e6">Delta 负责分析事实，Lakebase 负责在线查询。</p></div>
+          <div><h3 style="color:#64c5cf">正确的交付</h3><p style="color:#dbe2e6">参数化 SQL、稳定 JSON、OpenAPI 与自动测试。</p></div>
+        </div>
+        <p class="title-meta">Next: monthly/risk endpoints · React dashboard · continuous sync · scheduled jobs</p>
+      </section>
+
+      <div class="counter" id="counter">01 / 24</div>
+      <nav class="controls" aria-label="Slide controls">
+        <button type="button" id="prev" title="Previous slide" aria-label="Previous slide">‹</button>
+        <button type="button" id="next" title="Next slide" aria-label="Next slide">›</button>
+      </nav>
+      <div class="progress" aria-hidden="true"><span id="progress"></span></div>
+    </div>
+  </main>
+
+  <script>
+    const deck = document.getElementById("deck");
+    const slides = [...document.querySelectorAll(".slide")];
+    const counter = document.getElementById("counter");
+    const progress = document.getElementById("progress");
+    let current = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+
+    function resizeDeck() {
+      const scale = Math.min(window.innerWidth / 1600, window.innerHeight / 900);
+      deck.style.setProperty("--scale", scale);
+    }
+
+    function showSlide(index, updateHash = true) {
+      current = Math.max(0, Math.min(slides.length - 1, index));
+      slides.forEach((slide, i) => slide.classList.toggle("active", i === current));
+      counter.textContent = `${String(current + 1).padStart(2, "0")} / ${String(slides.length).padStart(2, "0")}`;
+      progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+      if (updateHash) history.replaceState(null, "", `#${current + 1}`);
+    }
+
+    document.getElementById("prev").addEventListener("click", () => showSlide(current - 1));
+    document.getElementById("next").addEventListener("click", () => showSlide(current + 1));
+    window.addEventListener("resize", resizeDeck);
+    window.addEventListener("hashchange", () => showSlide(Number(location.hash.slice(1)) - 1, false));
+    window.addEventListener("keydown", (event) => {
+      if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(event.key)) {
+        event.preventDefault();
+        showSlide(current + 1);
+      } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key)) {
+        event.preventDefault();
+        showSlide(current - 1);
+      } else if (event.key === "Home") {
+        showSlide(0);
+      } else if (event.key === "End") {
+        showSlide(slides.length - 1);
+      }
+    });
+
+    resizeDeck();
+    showSlide(current, false);
+  </script>
+</body>
+</html>

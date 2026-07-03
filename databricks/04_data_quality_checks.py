@@ -132,8 +132,14 @@ else:
 
 total_checks = 10
 passed_checks = total_checks - len(failed_checks)
+dq_passed = len(failed_checks) == 0
+
+# Lakeflow Jobs task values are available to downstream If/else tasks.
+dbutils.jobs.taskValues.set(key="dq_passed", value=dq_passed)
+
 print(f"\n{'='*50}")
 print(f"Data Quality Summary: {passed_checks}/{total_checks} passed")
+print(f"Workflow task value: dq_passed={str(dq_passed).lower()}")
 print(f"{'='*50}")
 
 if failed_checks:

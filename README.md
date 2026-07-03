@@ -21,6 +21,7 @@ Raw CSV → Bronze Delta → Silver Delta → Gold Delta
 - [Lesson 1: Raw to Bronze and Silver](docs/lesson-01-raw-bronze-silver.md)
 - [Lesson 2: Gold and Data Quality](docs/lesson-02-gold-data-quality.md)
 - [Lesson 3: Serving and Node.js API](docs/lesson-03-serving-api.md)
+- [HTML course slides](course-slides/index.html)
 - [Full project reference](End-to-End%20Weather%20Lakehouse%20Serving%20Project%20操作指南.md)
 
 ## Repository

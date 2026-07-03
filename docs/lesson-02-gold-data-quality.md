@@ -311,6 +311,8 @@ HAVING COUNT(*) > 1;
 03_build_gold_weather_metrics
    ↓
 04_data_quality_checks
+   ↓
+task value: dq_passed
 ```
 
 课堂重点：
@@ -318,6 +320,11 @@ HAVING COUNT(*) > 1;
 - Workflow 的职责是 orchestration。
 - Notebook 的职责是 transform。
 - Data quality checks 应该放在 publish / serving 之前。
+- DQ notebook 使用 `dbutils.jobs.taskValues.set()` 输出唯一的 Workflow contract：`dq_passed`。
+- `dq_passed` 是 Workflow task value，不是操作系统环境变量。
+
+DQ 失败时，notebook 会先写出 `dq_passed=false`，再抛出异常让任务变红。Lesson 3
+会添加 If/else condition task，并且只把 `true` 分支连接到 Lakebase sync。
 
 相同 CSV 串行重跑时，表使用 `overwrite` 写入，不会累积重复数据。严格来说 Bronze/Silver 不是逐字段幂等，因为 `ingestion_timestamp` 每次都会更新；Gold 业务结果在输入不变时应保持一致。
 
@@ -339,6 +346,7 @@ workspace.default.gold_weather_risk_days
 - Gold daily 表没有重复 `city + weather_date`。
 - Gold risk 表没有重复 `city + weather_date + risk_type`。
 - Data quality notebook 输出 `Data Quality Summary: 10/10 passed`。
+- Job run 中可以看到 task value `dq_passed=true`。
 
 ## 课堂提问
 
